@@ -140,19 +140,36 @@ def get_price_from_booking(hotel_name):
 
         print(f"📄 HTML del hotel guardado en: {file_path}")
 
-        # 4. Extraer precios antes de seleccionar fechas
-        print("🔍 Extrayendo precios visibles ANTES de seleccionar fechas...")
-        time.sleep(2)
-        price_elements = driver.find_elements(By.CSS_SELECTOR, "div.c8079eaf8c.e6208ee469.b0e227d988 span.b1f25950bd")
-        prices = []
+        # 4. Extraer precios directamente desde el DOM (sin buscar contenedor intermedio)
+        #print("🔍 Extrayendo precios directamente de los días del calendario...")
 
-        for elem in price_elements:
-            text = elem.text.strip().replace("€", "").replace("\xa0", "").replace(",", ".")
+        time.sleep(2)  # Esperamos brevemente para que se rendericen los precios
+
+        print("🔍 Extrayendo precios directamente del calendario...")
+
+        prices = []
+        td_elements = driver.find_elements(By.CSS_SELECTOR, "td[role='gridcell']")
+
+        for td in td_elements:
             try:
-                price = float(text)
-                prices.append(price)
-            except ValueError:
-                continue
+                # Buscar el primer div descendiente
+                div = td.find_element(By.TAG_NAME, "div")
+                
+                # Dentro del div, buscar el primer span
+                span = div.find_element(By.TAG_NAME, "span")
+                text = span.text.strip()
+
+                if "€" in text:
+                    value = text.replace("€", "").replace("\xa0", "").replace(",", ".")
+                    price = float(value)
+                    prices.append(price)
+            except Exception:
+                continue  # Si no encuentra los elementos, simplemente salta al siguiente td
+
+        print(f"💶 Precios encontrados: {prices}")
+
+
+        print(f"💶 Precios encontrados en calendario: {prices}")
 
         # 5. Intentar seleccionar fechas si es posible (aunque ya tengamos precios)
         seleccion_ok = seleccionar_fecha_disponible(driver)
