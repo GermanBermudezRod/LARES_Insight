@@ -21,7 +21,7 @@ def seleccionar_fecha_disponible(driver, espera=10):
     try:
         print("📅 Abriendo calendario en ficha del hotel...")
 
-        # 1. Hacer clic en el botón de fechas del hotel
+        # 1. Asegurarse de que el botón del calendario está presente y hacer clic
         WebDriverWait(driver, espera).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "button[data-testid='date-display-field-start']"))
         )
@@ -31,32 +31,59 @@ def seleccionar_fecha_disponible(driver, espera=10):
         calendar_button.click()
         time.sleep(2)
 
-        # 2. Obtener todos los días visibles con data-date
-        dias = driver.find_elements(By.CSS_SELECTOR, "span[data-date]")
+        # 2. REABRIR el calendario si se ha cerrado antes de seleccionar
+        try:
+            calendar_button = driver.find_element(By.CSS_SELECTOR, "button[data-testid='date-display-field-start']")
+            driver.execute_script("arguments[0].scrollIntoView(true);", calendar_button)
+            time.sleep(1)
+            calendar_button.click()
+            print("✅ Calendario reabierto correctamente")
+            time.sleep(2)
+        except Exception as e:
+            print(f"❌ No se pudo reabrir el calendario: {e}")
 
-        # 3. Buscar dos días consecutivos con texto que contenga €
-        for i in range(len(dias) - 1):
-            dia_texto = dias[i].text
-            siguiente_texto = dias[i + 1].text
+        # 3. Buscar celdas del calendario visibles
+        celdas = driver.find_elements(By.CSS_SELECTOR, "td[role='gridcell']")
+        print(f"🔎 Encontradas {len(celdas)} celdas en el calendario.")
 
-            if "€" in dia_texto and "€" in siguiente_texto:
-                dia_entrada = dias[i]
-                dia_salida = dias[i + 1]
+        for i in range(len(celdas) - 1):
+            try:
+                # Obtener spans internos
+                span_precio_1 = celdas[i].find_element(By.CSS_SELECTOR, "div span")
+                span_precio_2 = celdas[i + 1].find_element(By.CSS_SELECTOR, "div span")
 
-                try:
-                    driver.execute_script("arguments[0].scrollIntoView(true);", dia_entrada)
-                    dia_entrada.click()
-                    print(f"📆 Entrada: {dia_entrada.get_attribute('data-date')}")
+                texto1 = span_precio_1.text.strip()
+                texto2 = span_precio_2.text.strip()
 
+                if "€" in texto1 and "€" in texto2:
+                    # Highlight visual para depuración
+                    driver.execute_script("arguments[0].style.border='3px solid red'", celdas[i])
+                    driver.execute_script("arguments[0].style.border='3px solid green'", celdas[i + 1])
                     time.sleep(1)
-                    dia_salida.click()
-                    print(f"📆 Salida: {dia_salida.get_attribute('data-date')}")
 
+                    celdas[i].click()
+                    print(f"📆 Entrada seleccionada: {texto1}")
+                    time.sleep(1)
+
+                    celdas[i + 1].click()
+                    print(f"📆 Salida seleccionada: {texto2}")
                     time.sleep(2)
-                    return True
-                except Exception as e:
-                    print(f"⚠️ Error haciendo clic en fechas: {e}")
-                    continue
+
+                    # 4. Hacer clic en el botón de confirmar fechas (submit)
+                    try:
+                        layout = driver.find_element(By.CSS_SELECTOR, "div[data-testid='searchbox-layout-wide']")
+                        submit = layout.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                        driver.execute_script("arguments[0].scrollIntoView(true);", submit)
+                        time.sleep(1)
+                        submit.click()
+                        print("✅ Fechas confirmadas correctamente.")
+                        return True
+                    except Exception as e:
+                        print(f"⚠️ No se pudo confirmar fechas: {e}")
+                        return False
+
+            except Exception:
+                continue
 
         print("⚠️ No se encontraron dos días consecutivos con precio.")
         return False
