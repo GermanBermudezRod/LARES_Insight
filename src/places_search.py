@@ -18,41 +18,41 @@ def search_nearby_lodgings(lat, lon, radius=10000):
         "key": API_KEY
     }
     response = requests.get(url, params=params)
-    results = response.json().get("results", [])
-    return results
+    return response.json().get("results", [])
 
 def get_place_details(place_id):
     url = "https://maps.googleapis.com/maps/api/place/details/json"
     params = {
         "place_id": place_id,
-        "fields": "name,rating,user_ratings_total,formatted_address,types,website,formatted_phone_number,url,place_id",
+        "fields": "name,rating,user_ratings_total,formatted_address,types,website,formatted_phone_number,url,place_id,geometry",
         "key": API_KEY
     }
     response = requests.get(url, params=params)
     return response.json().get("result", {})
 
-def get_cached_or_query_places(lat, lon, threshold_km=0.2):
+def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
     if os.path.exists(CACHE_FILE):
         df = pd.read_csv(CACHE_FILE)
 
-        # Buscar si ya hay resultados para estas coordenadas (por proximidad)
         matches = df.apply(lambda row: geodesic((lat, lon), (row["origin_lat"], row["origin_lon"])).km < threshold_km, axis=1)
         cached = df[matches]
         if not cached.empty:
             print("📁 Usando resultados cacheados")
             return cached.to_dict(orient="records")
 
-    # Si no hay datos en el cache, buscar con la API
     print("🌐 Buscando con Google Places API...")
-    results = search_nearby_lodgings(lat, lon)
+    results = search_nearby_lodgings(lat, lon, radius=radius_m)
     data = []
 
     for place in results:
         details = get_place_details(place["place_id"])
-        if details:
+        if details and "geometry" in details:
+            loc = details["geometry"]["location"]
             data.append({
                 "origin_lat": lat,
                 "origin_lon": lon,
+                "lat": loc["lat"],
+                "lon": loc["lng"],
                 "name": details.get("name"),
                 "address": details.get("formatted_address"),
                 "rating": details.get("rating"),
@@ -63,14 +63,14 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2):
                 "types": ", ".join(details.get("types", [])),
                 "place_id": details.get("place_id")
             })
-        time.sleep(1)
+        time.sleep(1)  # Evita sobrepasar los límites de cuota
 
-    # Guardar nuevos resultados en el CSV
     if data:
         df_new = pd.DataFrame(data)
         if os.path.exists(CACHE_FILE):
             df_old = pd.read_csv(CACHE_FILE)
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
+            df_combined.drop_duplicates(subset=["place_id"], inplace=True)
             df_combined.to_csv(CACHE_FILE, index=False)
         else:
             df_new.to_csv(CACHE_FILE, index=False)
