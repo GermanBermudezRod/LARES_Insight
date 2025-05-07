@@ -48,6 +48,11 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
         details = get_place_details(place["place_id"])
         if details and "geometry" in details:
             loc = details["geometry"]["location"]
+
+            types_list = details.get("types", [])
+            type_primary = types_list[0] if types_list else None
+            guest_rating = details.get("rating")
+
             data.append({
                 "origin_lat": lat,
                 "origin_lon": lon,
@@ -55,12 +60,14 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
                 "lon": loc["lng"],
                 "name": details.get("name"),
                 "address": details.get("formatted_address"),
-                "rating": details.get("rating"),
+                "rating": guest_rating,
                 "total_reviews": details.get("user_ratings_total"),
                 "phone": details.get("formatted_phone_number"),
                 "website": details.get("website"),
                 "maps_url": details.get("url"),
-                "types": ", ".join(details.get("types", [])),
+                "types": ", ".join(types_list),
+                "type_primary": type_primary,
+                "guest_rating": guest_rating,
                 "place_id": details.get("place_id")
             })
         time.sleep(1)  # Evita sobrepasar los límites de cuota
