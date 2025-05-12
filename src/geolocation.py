@@ -16,14 +16,14 @@ CACHE_FILE = "data/coordinates_cache.csv"
 
 # Asegurarse de que el CSV exista (si no, se crea)
 if not os.path.exists(CACHE_FILE):
-    df = pd.DataFrame(columns=["name", "latitude", "longitude"])
+    df = pd.DataFrame(columns=["name", "latitude", "longitude", "zona"])
     df.to_csv(CACHE_FILE, index=False)
 
 def get_coordinates(name):
     """
     Devuelve las coordenadas de un alojamiento:
-    - Busca primero en el CSV local
-    - Si no está, lo consulta en la API de Google y guarda el resultado
+    - Busca primero en el CSV local (con coordenadas y zona)
+    - Si no está, lo consulta en la API de Google y guarda el resultado incluyendo la zona
     """
     df = pd.read_csv(CACHE_FILE)
 
@@ -39,11 +39,31 @@ def get_coordinates(name):
     if location:
         lat, lon = location.latitude, location.longitude
 
-        # Guardar en el CSV
-        new_row = pd.DataFrame([{"name": name, "latitude": lat, "longitude": lon}])
-        new_row.to_csv(CACHE_FILE, mode="a", header=False, index=False)
+        # Obtener también la zona/localidad (ciudad, pueblo...)
+        zona = None
+        if location.raw and "address_components" in location.raw:
+            for component in location.raw["address_components"]:
+                if "locality" in component["types"]:
+                    zona = component["long_name"]
+                    break
+                elif "administrative_area_level_2" in component["types"]:
+                    zona = component["long_name"]
 
+        # Construir nueva fila con zona
+        new_row = pd.DataFrame([{
+            "name": name,
+            "latitude": lat,
+            "longitude": lon,
+            "zona": zona
+        }])
+
+        # Asegurar que zona está en el CSV
+        if "zona" not in df.columns:
+            df["zona"] = None
+
+        new_row.to_csv(CACHE_FILE, mode="a", header=False, index=False)
         return (lat, lon)
+
     else:
         return None
 

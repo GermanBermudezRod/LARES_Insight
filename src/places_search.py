@@ -78,7 +78,15 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
             df_old = pd.read_csv(CACHE_FILE)
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
             df_combined.drop_duplicates(subset=["place_id"], inplace=True)
+            # Asegurar que las columnas de precio están presentes aunque vacías
+            for col in ["price_min", "price_max", "price_avg"]:
+                if col not in df_combined.columns:
+                    df_combined[col] = None
             df_combined.to_csv(CACHE_FILE, index=False)
+            # Asegurar que las columnas de precio están presentes aunque vacías
+            for col in ["price_min", "price_max", "price_avg"]:
+                if col not in df_combined.columns:
+                    df_combined[col] = None
         else:
             df_new.to_csv(CACHE_FILE, index=False)
 
