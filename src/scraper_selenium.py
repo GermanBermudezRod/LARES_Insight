@@ -1,4 +1,3 @@
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -96,25 +95,12 @@ def seleccionar_fecha_disponible(driver, espera=10):
 
 # Función principal del scraper
 def get_price_from_booking(hotel_name):
-    # Cargar zona esperada desde coordinates_cache.csv
-    try:
-        coord_df = pd.read_csv("data/coordinates_cache.csv")
-        row = coord_df[coord_df["name"].str.lower() == hotel_name.lower()]
-        if not row.empty:
-            zona_esperada = row.iloc[0]["address"].lower() if "address" in row.columns else ""
-        else:
-            zona_esperada = ""
-    except Exception as e:
-        print(f"⚠️ No se pudo leer zona desde CSV: {e}")
-        zona_esperada = ""
-
-    otras_zonas_validas = ["ossa de montiel", "lagunas de ruidera", "ruidera", "albacete"]
-
-    # Resto de la función
+    # Configuración del navegador
     options = Options()
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--window-size=1920,1080")
+
     service = Service(CHROMEDRIVER_PATH)
     driver = webdriver.Chrome(service=service, options=options)
 
@@ -127,33 +113,108 @@ def get_price_from_booking(hotel_name):
         search_box.clear()
         search_box.send_keys(hotel_name)
         time.sleep(2)
-
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li[data-testid='autocomplete-result']"))
-        )
-        suggestions = driver.find_elements(By.CSS_SELECTOR, "li[data-testid='autocomplete-result']")
-
-        encontrado = False
-        for suggestion in suggestions:
-            texto = suggestion.text.lower()
-            if zona_esperada and zona_esperada in texto:
-                suggestion.click()
-                print(f"✅ Sugerencia seleccionada: {texto}")
-                encontrado = True
-                break
-            elif any(z in texto for z in otras_zonas_validas):
-                suggestion.click()
-                print(f"✅ Sugerencia válida seleccionada: {texto}")
-                encontrado = True
-                break
-
-        if not encontrado:
-            print("⚠️ No se encontró sugerencia con la zona esperada. Usando el primer resultado por defecto.")
-            suggestions[0].click()
-
+        search_box.send_keys(Keys.RETURN)
         time.sleep(6)
 
-        # ... (aquí sigue todo tu código normal, sin tocar más)
+        # 1. Validar nombre y dirección
+        try:
+            result_name_elem = driver.find_element(By.CSS_SELECTOR, "div[data-testid='title']")
+            result_name = result_name_elem.text.strip()
+        except:
+            result_name = ""
+
+        try:
+            result_address_elem = driver.find_element(By.CSS_SELECTOR, "span[data-testid='address']")
+            result_address = result_address_elem.text.strip()
+        except:
+            result_address = ""
+
+        zona_esperada = "ossa de montiel"
+        otras_zonas_validas = ["lagunas de ruidera", "ruidera"]
+        nombre_similar = similar(hotel_name, result_name) > 0.7
+        zona_coincide = any(z in result_address.lower() for z in [zona_esperada] + otras_zonas_validas)
+
+        if not (nombre_similar or zona_coincide):
+            print("⚠️ El resultado no coincide ni por nombre ni por zona.")
+            return "NO_MATCH", "NO_MATCH", "NO_MATCH"
+        else:
+            print(f"✅ Coincidencia aceptada: {result_name} | {result_address}")
+
+        # 2. Ir al enlace del hotel
+        hotel_link = driver.find_element(By.CSS_SELECTOR, "a[data-testid='title-link']")
+        hotel_url = hotel_link.get_attribute("href")
+        driver.get(hotel_url)
+        time.sleep(6)
+
+        # 3. Abrir calendario (aunque no seleccionemos fechas aún)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "button[data-testid='date-display-field-start']"))
+        )
+        calendar_button = driver.find_element(By.CSS_SELECTOR, "button[data-testid='date-display-field-start']")
+        driver.execute_script("arguments[0].scrollIntoView(true);", calendar_button)
+        time.sleep(1)
+        calendar_button.click()
+        time.sleep(2)
+        # 📁 Guardar snapshot del HTML del calendario para este hotel
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        snapshots_dir = os.path.join(project_root, "html_snapshots")
+        os.makedirs(snapshots_dir, exist_ok=True)
+
+        safe_name = "".join(c for c in hotel_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        file_path = os.path.join(snapshots_dir, f"{safe_name}.html")
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+
+        print(f"📄 HTML del hotel guardado en: {file_path}")
+
+        # 4. Extraer precios directamente desde el DOM (sin buscar contenedor intermedio)
+        #print("🔍 Extrayendo precios directamente de los días del calendario...")
+
+        time.sleep(2)  # Esperamos brevemente para que se rendericen los precios
+
+        print("🔍 Extrayendo precios directamente del calendario...")
+
+        prices = []
+        td_elements = driver.find_elements(By.CSS_SELECTOR, "td[role='gridcell']")
+
+        for td in td_elements:
+            try:
+                # Buscar el primer div descendiente
+                div = td.find_element(By.TAG_NAME, "div")
+                
+                # Dentro del div, buscar el primer span
+                span = div.find_element(By.TAG_NAME, "span")
+                text = span.text.strip()
+
+                if "€" in text:
+                    value = text.replace("€", "").replace("\xa0", "").replace(",", ".")
+                    price = float(value)
+                    prices.append(price)
+            except Exception:
+                continue  # Si no encuentra los elementos, simplemente salta al siguiente td
+
+        print(f"💶 Precios encontrados: {prices}")
+
+
+        print(f"💶 Precios encontrados en calendario: {prices}")
+
+        # 5. Intentar seleccionar fechas si es posible (aunque ya tengamos precios)
+        seleccion_ok = seleccionar_fecha_disponible(driver)
+        if not seleccion_ok:
+            print("⚠️ No se pudieron seleccionar fechas. Continuamos con precios visibles.")
+
+        # 6. Guardar precios si se encontraron
+        if prices:
+            price_min = round(min(prices), 2)
+            price_max = round(max(prices), 2)
+            price_avg = round(sum(prices) / len(prices), 2)
+
+            print(f"✅ Precios ➜ Min: {price_min} €, Max: {price_max} €, Media: {price_avg} €")
+            return price_min, price_max, price_avg
+        else:
+            print("⚠️ No se encontraron precios visibles.")
+            return None, None, None
 
     except Exception as e:
         print(f"❌ Error general en Selenium: {e}")

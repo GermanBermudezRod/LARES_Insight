@@ -2,15 +2,105 @@ import streamlit as st
 import pandas as pd
 import os
 import pydeck as pdk
+import time
 from src.geolocation import get_coordinates
 from src.places_search import get_cached_or_query_places
+from src.scraper_selenium import get_price_from_booking
+from src.extract_additional_info import analizar_html
 
 CSV_PATH = "data/nearby_competitors.csv"
 
 st.set_page_config(page_title="Comparador de alojamientos", layout="wide")
-st.title("\U0001F3E1 Comparador de alojamientos rurales")
 
-# Inicializar estado
+# Estilos personalizados de Lares Gestión
+#st.image("data/5.png", width=200)
+st.markdown("""
+    <style>
+        .fixed-logo {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        width: 140px;
+        z-index: 100;
+    }
+    .stApp {
+        padding-top: 100px;
+        padding-left: 160px;
+        overflow: auto;
+    }
+    body, .stApp {
+        background-color: #F9FAFC;
+    }
+    h1, h2, h3, h4 {
+        color: #0076FF;
+    }
+    .stCheckbox > div {
+        background-color: #ffffff;
+        border: 1px solid #D0D7DE;
+        border-radius: 10px;
+        padding: 10px;
+        margin: 5px 0;
+    }
+    .stCheckbox > div:hover {
+        background-color: #E4F1FF;
+        border-color: #0076FF;
+    }
+    .stText, .stMarkdown, .stCaption, label {
+        color: #111111;
+    }
+    button[kind="primary"] {
+        background-color: #0076FF;
+        color: white;
+        border-radius: 10px;
+    }
+    button[kind="primary"]:hover {
+        background-color: #005EDC;
+        color: white;
+    }
+    </style>
+    <a href="https://www.laresgestion.com" target="_blank">
+        <img src="https://imgur.com/gallery/two-day-old-baby-giraffe-5QI5O3B" class="fixed-logo">
+    </a>
+""", unsafe_allow_html=True)
+
+st.title("🏡 Comparador de alojamientos rurales")
+
+# ✅ FUNCIÓN MEJORADA PARA EJECUTAR SELENIUM
+def lanzar_scraper_para_seleccionados(df, seleccionados):
+    errores = []
+    for index, row in df.iterrows():
+        if row["name"] not in seleccionados:
+            continue
+
+        st.write(f"🔍 Obteniendo precios de: **{row['name']}**")
+        try:
+            price_min, price_max, price_avg = get_price_from_booking(row["name"])
+            df.loc[index, "price_min"] = price_min
+            df.loc[index, "price_max"] = price_max
+            df.loc[index, "price_avg"] = price_avg
+
+            if price_min is not None:
+                st.success(f"✅ {row['name']} ➜ Mín: {price_min} € · Máx: {price_max} € · Media: {price_avg} €")
+            else:
+                st.warning(f"⚠️ {row['name']} no tiene precios visibles.")
+        except Exception as e:
+            errores.append((row["name"], str(e)))
+            st.error(f"❌ Error con {row['name']}: {e}")
+
+        time.sleep(2.5)
+
+    df.to_csv(CSV_PATH, index=False)
+    st.success("💾 Datos actualizados correctamente en el CSV.")
+
+    if errores:
+        st.warning("Alojamientos con error:")
+        for name, msg in errores:
+            st.text(f"- {name}: {msg}")
+
+    st.write("### 💸 Resultados de precios obtenidos:")
+    st.dataframe(df[df["name"].isin(seleccionados)][["name", "price_min", "price_max", "price_avg"]])
+
+# Estado inicial
 if "coords" not in st.session_state:
     st.session_state.coords = None
 if "competitors" not in st.session_state:
@@ -25,22 +115,20 @@ with st.form("search_form"):
     user_input = st.text_input("Introduce el nombre de tu alojamiento o zona:", "A mayor precisión, mejores resultados")
     st.markdown("Ejemplo: `Casa rural X en la Sierra de Guadarrama`")
     search_radius = st.slider("Selecciona el radio de búsqueda (km):", 1, 50, 15)
-    submitted = st.form_submit_button("\U0001F50D Buscar competencia")
+    submitted = st.form_submit_button("🔍 Buscar competencia")
 
 # Paso 2: Procesar búsqueda
 if submitted:
     coords = get_coordinates(user_input)
     if coords:
         st.session_state.coords = coords
-        st.success(f"\U0001F4CD Coordenadas encontradas: {coords}")
+        st.success(f"📍 Coordenadas encontradas: {coords}")
 
         results = get_cached_or_query_places(coords[0], coords[1], radius_m=search_radius * 1000)
         df_results = pd.DataFrame(results)
         df_results = df_results[
-            ~(
-                (df_results["origin_lat"].round(6) == df_results["lat"].round(6)) &
-                (df_results["origin_lon"].round(6) == df_results["lon"].round(6))
-            )
+            ~((df_results["origin_lat"].round(6) == df_results["lat"].round(6)) &
+              (df_results["origin_lon"].round(6) == df_results["lon"].round(6)))
         ]
         st.session_state.competitors = df_results
 
@@ -72,7 +160,7 @@ if submitted:
 
 # Paso 3: Mostrar resultados
 if not st.session_state.competitors.empty:
-    st.write("### \U0001F3D8️ Alojamientos encontrados:")
+    st.write("### 🏘️ Alojamientos encontrados:")
 
     cols = st.columns(4)
     new_selection = []
@@ -94,8 +182,7 @@ if not st.session_state.competitors.empty:
         for hotel in st.session_state.selected:
             row = st.session_state.competitors[st.session_state.competitors["name"] == hotel]
             if not row.empty:
-                address = row.iloc[0]["address"]
-                st.markdown(f"- **{hotel}** – {address}")
+                st.markdown(f"- **{hotel}** – {row.iloc[0]['address']}")
 
         if "lat" in st.session_state.competitors.columns and "lon" in st.session_state.competitors.columns:
             query_marker = {
@@ -132,20 +219,23 @@ if not st.session_state.competitors.empty:
                     zoom=11,
                     pitch=0
                 ),
-                layers=[
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        data=map_df,
-                        get_position='[longitude, latitude]',
-                        get_radius="size",
-                        get_color='[color_r, color_g, color_b]',
-                        pickable=True
-                    )
-                ],
+                layers=[pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_df,
+                    get_position='[longitude, latitude]',
+                    get_radius="size",
+                    get_color='[color_r, color_g, color_b]',
+                    pickable=True
+                )],
                 tooltip={"text": "{name}"}
             ))
         else:
             st.warning("No se encontraron coordenadas reales para los alojamientos seleccionados.")
+
+        # ✅ BOTÓN PARA SCRAPING CON SELENIUM
+        if st.button("🚀 Ejecutar análisis de precios con Selenium"):
+            lanzar_scraper_para_seleccionados(st.session_state.competitors, st.session_state.selected)
+
     else:
         st.warning("Selecciona al menos un alojamiento y pulsa 'Confirmar selección'.")
 

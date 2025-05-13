@@ -1,0 +1,7 @@
+[theme]
+base="light"
+primaryColor="#0076FF"         # Azul corporativo Lares
+backgroundColor="#F9FAFC"      # Fondo claro
+secondaryBackgroundColor="#E4EAF1"  # Para paneles y contenedores
+textColor="#111111"            # Negro suave para el texto
+font="verdana"
