@@ -6,7 +6,7 @@ import time
 from src.geolocation import get_coordinates
 from src.places_search import get_cached_or_query_places
 from src.scraper_selenium import get_price_from_booking
-from src.extract_additional_info import analizar_html
+from src.extract_additional_info import extract_extras_from_html
 
 CSV_PATH = "data/nearby_competitors.csv"
 
