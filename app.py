@@ -13,51 +13,127 @@ CSV_PATH = "data/nearby_competitors.csv"
 st.set_page_config(page_title="Comparador de alojamientos", layout="wide")
 
 # Estilos personalizados de Lares Gestión
-#st.image("data/5.png", width=200)
+st.image("data/5.png", width=200)
 st.markdown("""
     <style>
-        .fixed-logo {
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        width: 140px;
-        z-index: 100;
-    }
-    .stApp {
-        padding-top: 100px;
-        padding-left: 160px;
-        overflow: auto;
-    }
+    /* ====== CONFIGURACIÓN GENERAL ====== */
     body, .stApp {
-        background-color: #F9FAFC;
+        background-color: #F4F6FA;
+        color: #1E1E1E;
+        font-family: 'Segoe UI', sans-serif;
     }
-    h1, h2, h3, h4 {
-        color: #0076FF;
+
+    .stApp {
+        padding-top: 100px !important;
+        padding-left: 160px !important;
     }
+
+    /* ====== LOGO FIJO IZQUIERDA ====== */
+    .fixed-logo {
+        position: fixed !important;
+        top: 20px !important;
+        left: 20px !important;
+        width: 140px !important;
+        z-index: 100 !important;
+    }
+
+    /* ====== TÍTULOS ====== */
+    h1, h2, h3, h4, h5, h6 {
+        color: #0076FF !important;
+        font-weight: 700;
+    }
+
+    /* ====== TEXTOS GENERALES ====== */
+    .stMarkdown, .stText, .stCaption, label, .css-1cpxqw2, .css-10trblm {
+        color: #1E1E1E !important;
+        font-size: 16px !important;
+    }
+
+    /* ====== ENTRADAS DE TEXTO Y SELECTS ====== */
+    input, textarea {
+        background-color: white !important;
+        color: #1E1E1E !important;
+        border: 1px solid #D0D7DE !important;
+        border-radius: 6px !important;
+    }
+
+    /* ====== SLIDER ====== */
+    .stSlider > div {
+        background-color: transparent !important;
+        color: #1E1E1E !important;
+    }
+
+    /* ====== CHECKBOXES (solución de visibilidad) ====== */
     .stCheckbox > div {
-        background-color: #ffffff;
-        border: 1px solid #D0D7DE;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 5px 0;
+        background-color: #ffffff !important;
+        border: 1px solid #CBD5E0 !important;
+        border-radius: 8px !important;
+        padding: 10px !important;
+        color: #1E1E1E !important;
     }
+
+    .stCheckbox > div label {
+        color: #1E1E1E !important;
+        font-weight: 500 !important;
+    }
+
     .stCheckbox > div:hover {
-        background-color: #E4F1FF;
-        border-color: #0076FF;
+        background-color: #E4F1FF !important;
+        border-color: #0076FF !important;
     }
-    .stText, .stMarkdown, .stCaption, label {
-        color: #111111;
+
+    /* ====== BOTONES ====== */
+    button {
+        background-color: #0076FF !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 10px !important;
+        padding: 0.6em 1.2em !important;
+        border: none !important;
+        transition: background-color 0.3s ease;
     }
-    button[kind="primary"] {
-        background-color: #0076FF;
+
+    button:hover {
+        background-color: #005EDC !important;
+        color: white !important;
+    }
+
+    /* ====== MENSAJES DE ALERTA ====== */
+    .stAlert {
+        border-radius: 8px !important;
+        font-size: 15px;
+        color: #1E1E1E !important;
+    }
+
+    /* ====== TABLAS Y DATAFRAMES ====== */
+    .css-1d391kg, .css-1v0mbdj {
+        background-color: white !important;
+        color: #1E1E1E !important;
+    }
+
+    /* ====== TOOLTIP DEL MAPA ====== */
+    .deck-tooltip {
+        font-size: 14px;
+        background-color: rgba(0, 118, 255, 0.9);
         color: white;
-        border-radius: 10px;
+        padding: 5px;
+        border-radius: 5px;
     }
-    button[kind="primary"]:hover {
-        background-color: #005EDC;
-        color: white;
+            
+    /* Forzar el color del texto dentro de los checkboxes */
+    .stCheckbox p,
+    .stCheckbox label,
+    .stCheckbox div[data-testid="stMarkdownContainer"] {
+        color: #0076FF !important;  /* o #1A1A1A si prefieres el azul corporativo */
+    }
+
+    .stAlert p,
+    .stAlert label,
+    .stAlert div[data-testid="stMarkdownContainer"] {
+        color: #1A1A1A !important;  /* o #1A1A1A si prefieres el azul corporativo */
     }
     </style>
+
     <a href="https://www.laresgestion.com" target="_blank">
         <img src="https://imgur.com/gallery/two-day-old-baby-giraffe-5QI5O3B" class="fixed-logo">
     </a>
@@ -87,6 +163,16 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
             errores.append((row["name"], str(e)))
             st.error(f"❌ Error con {row['name']}: {e}")
 
+        # 📦 Extraer info adicional del HTML guardado
+        try:
+            extras = extract_extras_from_html(row["name"])
+            for key, value in extras.items():
+                if key not in df.columns:
+                    df[key] = None
+                df.at[index, key] = value
+        except Exception as e:
+            st.warning(f"⚠️ No se pudieron extraer extras de {row['name']}: {e}")
+
         time.sleep(2.5)
 
     df.to_csv(CSV_PATH, index=False)
@@ -112,7 +198,7 @@ if "temp_selected" not in st.session_state:
 
 # Paso 1: Formulario
 with st.form("search_form"):
-    user_input = st.text_input("Introduce el nombre de tu alojamiento o zona:", "A mayor precisión, mejores resultados")
+    user_input = st.text_input("Introduce el nombre de tu alojamiento o zona:", placeholder="A mayor precisión, mejores resultados")
     st.markdown("Ejemplo: `Casa rural X en la Sierra de Guadarrama`")
     search_radius = st.slider("Selecciona el radio de búsqueda (km):", 1, 50, 15)
     submitted = st.form_submit_button("🔍 Buscar competencia")
