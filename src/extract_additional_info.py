@@ -98,13 +98,13 @@ def extract_extras_from_html(nombre_hotel):
     ruta = os.path.join(html_dir, nombre_archivo)
 
     if not os.path.exists(ruta):
-        return {}  # Nada que extraer
+        return {}
 
     with open(ruta, "r", encoding="utf-8") as f:
         soup = BeautifulSoup(f, "html.parser")
 
     texto_completo = soup.get_text(separator=" ").lower()
-    resultado = {}
+    extras = {}
 
     # Política de cancelación
     politica = "No especificada"
@@ -112,28 +112,23 @@ def extract_extras_from_html(nombre_hotel):
         if "cancelación" in fragmento.lower():
             politica = fragmento.strip()
             break
-    resultado["politica_cancelacion"] = politica
+    extras["cancelacion"] = politica
 
     # Mascotas
     if "no se admiten mascotas" in texto_completo:
-        resultado["mascotas"] = "No"
+        extras["mascotas"] = "No"
     elif "se admiten mascotas" in texto_completo:
-        resultado["mascotas"] = "Sí"
+        extras["mascotas"] = "Sí"
     else:
-        resultado["mascotas"] = "No especificado"
+        extras["mascotas"] = "No especificado"
 
-    # Cunas y camas supletorias
-    resultado["cunas"] = "Sí" if "cuna" in texto_completo else "No"
-    resultado["camas_supletorias"] = "Sí" if "cama supletoria" in texto_completo or "camas supletorias" in texto_completo else "No"
-    resultado["coste_adicional"] = "Sí" if "coste adicional" in texto_completo or "puede tener un coste" in texto_completo else "No"
+    # Cunas y camas
+    extras["cunas"] = "Sí" if "cuna" in texto_completo else "No"
+    extras["camas_supletorias"] = "Sí" if "cama supletoria" in texto_completo or "camas supletorias" in texto_completo else "No"
+    extras["costo_extra"] = "Sí" if "coste adicional" in texto_completo or "puede tener un coste" in texto_completo else "No"
 
     # Servicios adicionales
-    encontrados = [s.capitalize() for s in servicios_clave if s in texto_completo]
-    resultado["servicios_adicionales"] = ", ".join(encontrados) if encontrados else "Ninguno"
+    for servicio in servicios_clave:
+        extras[f"servicio_{servicio}"] = "Sí" if servicio in texto_completo else "No"
 
-    return resultado
-
-# Ejecutar análisis para todos los archivos .html
-for archivo in os.listdir(html_dir):
-    if archivo.endswith(".html"):
-        analizar_html(archivo)
+    return extras

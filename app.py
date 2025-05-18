@@ -141,10 +141,28 @@ st.markdown("""
 
 st.title("🏡 Comparador de alojamientos rurales")
 
-# ✅ FUNCIÓN MEJORADA PARA EJECUTAR SELENIUM
 def lanzar_scraper_para_seleccionados(df, seleccionados):
+    progress_placeholder = st.empty()
     errores = []
+    total = len([r for r in df.iterrows() if r[1]["name"] in seleccionados])
+    contador = 0
+
     for index, row in df.iterrows():
+        contador += 1
+        progress_html = f"""
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 0;">
+            <div style="width: 22px; height: 22px; border: 3px solid #0076FF; border-top: 3px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span style="font-weight: 500; color: #0076FF;">Analizando alojamiento {contador} de {total}...</span>
+        </div>
+        <style>
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        </style>
+        """
+        progress_placeholder.markdown(progress_html, unsafe_allow_html=True)
+
         if row["name"] not in seleccionados:
             continue
 
@@ -163,7 +181,6 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
             errores.append((row["name"], str(e)))
             st.error(f"❌ Error con {row['name']}: {e}")
 
-        # 📦 Extraer info adicional del HTML guardado
         try:
             extras = extract_extras_from_html(row["name"])
             for key, value in extras.items():
@@ -176,15 +193,13 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
         time.sleep(2.5)
 
     df.to_csv(CSV_PATH, index=False)
-    st.success("💾 Datos actualizados correctamente en el CSV.")
 
-    if errores:
-        st.warning("Alojamientos con error:")
-        for name, msg in errores:
-            st.text(f"- {name}: {msg}")
-
-    st.write("### 💸 Resultados de precios obtenidos:")
-    st.dataframe(df[df["name"].isin(seleccionados)][["name", "price_min", "price_max", "price_avg"]])
+    progress_placeholder.markdown(
+        "<span style='color: #0076FF; font-weight: 600;'>✅ Análisis completado con éxito.</span>",
+        unsafe_allow_html=True
+    )
+    time.sleep(2)
+    progress_placeholder.empty()
 
 # Estado inicial
 if "coords" not in st.session_state:
@@ -197,6 +212,9 @@ if "temp_selected" not in st.session_state:
     st.session_state.temp_selected = []
 
 # Paso 1: Formulario
+if "buscando_competidores" not in st.session_state:
+    st.session_state.buscando_competidores = False
+
 with st.form("search_form"):
     user_input = st.text_input("Introduce el nombre de tu alojamiento o zona:", placeholder="A mayor precisión, mejores resultados")
     st.markdown("Ejemplo: `Casa rural X en la Sierra de Guadarrama`")
@@ -205,51 +223,62 @@ with st.form("search_form"):
 
 # Paso 2: Procesar búsqueda
 if submitted:
-    coords = get_coordinates(user_input)
-    if coords:
-        st.session_state.coords = coords
-        st.success(f"📍 Coordenadas encontradas: {coords}")
+    st.session_state.buscando_competidores = True
 
-        results = get_cached_or_query_places(coords[0], coords[1], radius_m=search_radius * 1000)
-        df_results = pd.DataFrame(results)
-        df_results = df_results[
-            ~((df_results["origin_lat"].round(6) == df_results["lat"].round(6)) &
-              (df_results["origin_lon"].round(6) == df_results["lon"].round(6)))
-        ]
-        st.session_state.competitors = df_results
+    with st.spinner(" Buscando competidores..."):
+        coords = get_coordinates(user_input)
+        if coords:
+            st.session_state.coords = coords
+            #st.success("📍 Coordenadas del alojamiento encontradas")
 
-        df_results = df_results.rename(columns={"origin_lat": "query_lat", "origin_lon": "query_lon"})
+            results = get_cached_or_query_places(coords[0], coords[1], radius_m=search_radius * 1000)
+            df_results = pd.DataFrame(results)
+            df_results = df_results[
+                ~((df_results["origin_lat"].round(6) == df_results["lat"].round(6)) &
+                (df_results["origin_lon"].round(6) == df_results["lon"].round(6)))
+            ]
+            st.session_state.competitors = df_results
 
-        if os.path.exists(CSV_PATH):
-            df_old = pd.read_csv(CSV_PATH)
-            df_old = df_old.loc[:, ~df_old.columns.duplicated()]
+            df_results = df_results.rename(columns={"origin_lat": "query_lat", "origin_lon": "query_lon"})
+
+            if os.path.exists(CSV_PATH):
+                df_old = pd.read_csv(CSV_PATH)
+                df_old = df_old.loc[:, ~df_old.columns.duplicated()]
+            else:
+                df_old = pd.DataFrame()
+
+            missing_cols = set(df_old.columns) - set(df_results.columns)
+            for col in missing_cols:
+                df_results[col] = None
+
+            df_results = df_results[df_old.columns] if not df_old.empty else df_results
+            df_combined = pd.concat([df_old, df_results], ignore_index=True)
+            if "place_id" in df_combined.columns:
+                df_combined = df_combined.drop_duplicates(subset="place_id", keep="first")
+
+            df_combined.to_csv(CSV_PATH, index=False)
+            st.session_state.selected = df_results["name"].tolist()[:3]
+            st.session_state.temp_selected = st.session_state.selected.copy()
         else:
-            df_old = pd.DataFrame()
+            st.error("❌ No se encontraron coordenadas para ese lugar.")
+            st.session_state.coords = None
+            st.session_state.competitors = pd.DataFrame()
 
-        missing_cols = set(df_old.columns) - set(df_results.columns)
-        for col in missing_cols:
-            df_results[col] = None
-
-        df_results = df_results[df_old.columns] if not df_old.empty else df_results
-
-        df_combined = pd.concat([df_old, df_results], ignore_index=True)
-        if "place_id" in df_combined.columns:
-            df_combined = df_combined.drop_duplicates(subset="place_id", keep="first")
-
-        df_combined.to_csv(CSV_PATH, index=False)
-        st.session_state.selected = df_results["name"].tolist()[:3]
-        st.session_state.temp_selected = st.session_state.selected.copy()
-    else:
-        st.error("❌ No se encontraron coordenadas para ese lugar.")
-        st.session_state.coords = None
-        st.session_state.competitors = pd.DataFrame()
+    # Desactivar bandera
+    st.session_state.buscando_competidores = False
 
 # Paso 3: Mostrar resultados
+if st.session_state.buscando_competidores:
+    with st.spinner("🔄 Buscando competidores..."):
+        time.sleep(0.5)  # Simula el tiempo de espera antes de cargar
+
 if not st.session_state.competitors.empty:
     st.write("### 🏘️ Alojamientos encontrados:")
 
     cols = st.columns(4)
     new_selection = []
+
+    st.session_state.buscando_competidores = False
 
     for idx, (i, row) in enumerate(st.session_state.competitors.iterrows()):
         with cols[idx % 4]:
@@ -319,7 +348,7 @@ if not st.session_state.competitors.empty:
             st.warning("No se encontraron coordenadas reales para los alojamientos seleccionados.")
 
         # ✅ BOTÓN PARA SCRAPING CON SELENIUM
-        if st.button("🚀 Ejecutar análisis de precios con Selenium"):
+        if st.button("🚀 Ejecutar análisis de precios"):
             lanzar_scraper_para_seleccionados(st.session_state.competitors, st.session_state.selected)
 
     else:
@@ -328,3 +357,10 @@ if not st.session_state.competitors.empty:
 st.markdown("---")
 st.caption("Versión estable · Streamlit · 2025")
 st.markdown("Desarrollado por Germán Bermúdez Rodríguez - [GitHub](https://github.com/GermanBermudezRod) · [LinkedIn](https://www.linkedin.com/in/german-bermudez-rodriguez/)")
+
+col1, col2, col3 = st.columns([6, 1, 1])
+with col3:
+    if st.button("❌ Cerrar aplicación"):
+        st.warning("Cerrando aplicación...")
+        time.sleep(1)
+        os._exit(0)

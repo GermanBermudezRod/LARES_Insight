@@ -48,7 +48,6 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
         details = get_place_details(place["place_id"])
         if details and "geometry" in details:
             loc = details["geometry"]["location"]
-
             types_list = details.get("types", [])
             type_primary = types_list[0] if types_list else None
             guest_rating = details.get("rating")
@@ -70,23 +69,27 @@ def get_cached_or_query_places(lat, lon, threshold_km=0.2, radius_m=10000):
                 "guest_rating": guest_rating,
                 "place_id": details.get("place_id")
             })
-        time.sleep(1)  # Evita sobrepasar los límites de cuota
+        time.sleep(1)
 
     if data:
         df_new = pd.DataFrame(data)
+
         if os.path.exists(CACHE_FILE):
+            # Hacer backup
+            backup_path = CACHE_FILE + ".bak"
+            pd.read_csv(CACHE_FILE).to_csv(backup_path, index=False)
+
             df_old = pd.read_csv(CACHE_FILE)
+
+            # Añadir columnas que podrían existir en el viejo y no en el nuevo
+            for col in df_old.columns:
+                if col not in df_new.columns:
+                    df_new[col] = None
+
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
-            df_combined.drop_duplicates(subset=["place_id"], inplace=True)
-            # Asegurar que las columnas de precio están presentes aunque vacías
-            for col in ["price_min", "price_max", "price_avg"]:
-                if col not in df_combined.columns:
-                    df_combined[col] = None
+            df_combined.drop_duplicates(subset=["place_id"], keep="first", inplace=True)
             df_combined.to_csv(CACHE_FILE, index=False)
-            # Asegurar que las columnas de precio están presentes aunque vacías
-            for col in ["price_min", "price_max", "price_avg"]:
-                if col not in df_combined.columns:
-                    df_combined[col] = None
+
         else:
             df_new.to_csv(CACHE_FILE, index=False)
 
