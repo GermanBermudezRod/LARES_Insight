@@ -13,6 +13,54 @@ import os
 
 CHROMEDRIVER_PATH = r".\drivers\chromedriver-win64\chromedriver.exe"
 
+def guardar_html_de_booking(nombre_hotel):
+    options = Options()
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--window-size=1920,1080")
+    # Descomenta la línea siguiente si quieres ocultar el navegador:
+    # options.add_argument("--headless")
+
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # 1. Ir a la página principal de Booking
+        driver.get("https://www.booking.com/")
+        time.sleep(2)
+
+        # 2. Buscar el alojamiento
+        search_box = driver.find_element(By.NAME, "ss")
+        search_box.clear()
+        search_box.send_keys(nombre_hotel)
+        time.sleep(2)
+        search_box.send_keys(Keys.RETURN)
+        time.sleep(6)
+
+        # 3. Obtener el enlace del primer resultado
+        hotel_link = driver.find_element(By.CSS_SELECTOR, "a[data-testid='title-link']")
+        hotel_url = hotel_link.get_attribute("href")
+
+        # 4. Entrar en la ficha del hotel
+        driver.get(hotel_url)
+        time.sleep(6)
+
+        # 5. Guardar el HTML de la página
+        html = driver.page_source
+        safe_name = "".join(c for c in nombre_hotel if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        ruta = os.path.join("data", "html", f"{safe_name}.html")
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        print(f"✅ HTML guardado correctamente en {ruta}")
+
+    except Exception as e:
+        print(f"❌ Error al intentar guardar el HTML del alojamiento: {e}")
+
+    finally:
+        driver.quit()
+
 # Calcular similitud entre nombres
 def similar(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()

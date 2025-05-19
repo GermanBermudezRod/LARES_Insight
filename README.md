@@ -1,100 +1,148 @@
-Proyecto: Comparador Inteligente de Alojamientos Turísticos Rurales
+# 🏡 Comparador Inteligente de Alojamientos Turísticos Rurales
 
-Este proyecto tiene como objetivo desarrollar una herramienta de análisis competitivo para alojamientos turísticos rurales. Forma parte del Trabajo Final del Máster en Data Science & IA, y está alineado con los servicios de digitalización de una empresa enfocada en complejos turísticos rurales.
+Este proyecto forma parte del Trabajo Final del Máster en Data Science & IA y está diseñado para convertirse en un producto real dentro de la empresa **Lares Gestión**, especializada en digitalización de complejos turísticos rurales. La herramienta permite a los propietarios de alojamientos rurales comparar su establecimiento con la competencia directa y recibir sugerencias inteligentes de precios basadas en IA.
 
-🌍 Objetivo del Proyecto
+---
 
-Crear un sistema inteligente capaz de:
+## 🌍 Objetivo del Proyecto
 
-Localizar alojamientos turísticos cercanos a una dirección o casa rural determinada (por ejemplo, en un radio de 10km).
+Desarrollar una plataforma capaz de:
 
-Obtener información detallada de dichos alojamientos (nombre, dirección, puntuación, número de opiniones, etc.) mediante la API de Google Places.
+✅ Localizar alojamientos turísticos cercanos a un alojamiento concreto (radio configurable, por ejemplo 10 km).  
+✅ Obtener información pública sobre esos alojamientos usando la **Google Places API**.  
+✅ Extraer automáticamente precios reales visibles en **Booking.com** mediante Selenium.  
+✅ Detectar servicios, políticas y características disponibles de cada alojamiento.  
+✅ Generar una **recomendación de precio sugerido** basada en la competencia y las características propias.  
+✅ Presentar toda la información en una interfaz clara y visual construida con **Streamlit**.
 
-Guardar esta información en un fichero CSV para su posterior análisis.
+---
 
-Obtener automáticamente el precio medio por noche de cada alojamiento competidor desde Booking.com usando automatización con Selenium.
+## ⚙️ Funcionalidades implementadas (versión alfa estable)
 
-🔄 Situación Actual
+### 🔹 1. Geolocalización
+Utiliza la API de OpenCage para obtener las coordenadas del alojamiento propio a partir de un texto libre.
 
-Actualmente, el proyecto está en una fase funcional avanzada y modular:
+### 🔹 2. Búsqueda de competencia cercana
+A través de **Google Places API**, localiza alojamientos turísticos en un radio determinado desde el alojamiento base. Guarda los resultados y evita llamadas redundantes usando cacheo local en CSV.
 
-✅ Módulos implementados:
+### 🔹 3. Obtención de detalles y características
+Con **Google Place Details API** y scraping en Booking se detectan:
 
-Geolocalización: A partir de una dirección física, obtenemos las coordenadas con la API de OpenCage (con opción a escalar a Google Maps).
+- Nombre y dirección completa.
+- Puntuación y número de opiniones.
+- Capacidad máxima estimada.
+- Número de habitaciones.
+- Servicios detectados: desayuno, piscina, spa, limpieza, etc.
+- Políticas (mascotas, cancelación, camas supletorias, etc.).
 
-Detección de competencia: Usamos Google Places API para localizar alojamientos cercanos (10km).
+### 🔹 4. Scraping de precios con Selenium
+Se automatiza la búsqueda de cada alojamiento en Booking.com:
 
-Cacheo en CSV: Si ya hemos realizado una búsqueda para una ubicación, usamos el CSV en lugar de hacer una nueva llamada a la API, lo que permite ahorrar límites de peticiones.
+- Se abre la ficha del alojamiento.
+- Se detectan precios visibles directamente en el calendario.
+- Si es posible, se seleccionan fechas consecutivas y se confirma la estancia.
+- Se calculan y guardan: precio mínimo, máximo y promedio.
+- Se almacena el HTML del alojamiento en `data/html/` para posteriores análisis.
 
-Obtención de detalles: Usamos Google Places Details API para obtener información enriquecida de cada alojamiento.
+### 🔹 5. Análisis del alojamiento propio
+Se ejecuta un scraping similar al de los competidores para obtener el HTML del alojamiento propio, y se analizan los mismos datos:
 
-Scraper de precios en Booking.com:
+- Se extrae automáticamente la puntuación.
+- Se detecta el número de opiniones, extras, capacidad y habitaciones.
 
-Abre automáticamente la ficha de Booking del alojamiento.
+### 🔹 6. Recomendación inteligente de precios (IA)
+El sistema sugiere un **rango de precio recomendado** para el alojamiento propio teniendo en cuenta:
 
-Abre el calendario de fechas disponible y extrae los precios visibles mostrados directamente.
+- La media de precios visibles de la competencia (ajustada por comisión de Booking).
+- La puntuación y número de extras del propio alojamiento vs los competidores.
+- Una fórmula de ponderación para valorar diferencias.
 
-Intenta seleccionar fechas consecutivas disponibles con precio.
+---
 
-Guarda los precios visibles (mínimo, máximo y media) aunque no se puedan seleccionar fechas.
+## 📌 Componentes principales del proyecto
 
-Guarda un snapshot del HTML para cada hotel en la carpeta /html_snapshots/ para posterior análisis.
+### `geolocation.py`
+Obtiene las coordenadas del alojamiento base a partir del nombre.
 
-Escribe los resultados en el fichero nearby_competitors.csv.
+### `places_search.py`
+Consulta Google Places API para encontrar alojamientos cercanos. Incluye cacheo automático.
 
-⚠️ En progreso:
+### `scraper_selenium.py`
+Scrapea Booking para obtener precios reales y HTML completo de alojamientos (propio y competidores).
 
-Ajustes de robustez para la selección automática de fechas.
+### `extract_additional_info.py`
+Extrae desde el HTML guardado de Booking extras como política de cancelación, camas supletorias, coste adicional, etc.
 
-Validación más precisa de coincidencia entre el hotel buscado y el encontrado.
+### `extract_own_features.py`
+Extrae del HTML del alojamiento propio su puntuación, servicios, capacidad y más.
 
-Extracción de tipo de habitación y precios más detallados.
+### `price_recommender.py`
+Algoritmo que recomienda un precio mínimo y máximo basándose en la comparación con la competencia cercana.
 
-🏨 Tecnologías utilizadas
+### `app.py`
+Interfaz visual creada con **Streamlit**, integra todo el flujo:
 
-Python 3.10+
+1. Introducción del nombre del alojamiento propio.
+2. Búsqueda de competencia cercana.
+3. Visualización y selección manual de competidores.
+4. Ejecución del scraping automatizado.
+5. Presentación visual de los datos.
+6. Sugerencia inteligente de precios.
 
-Selenium (con ChromeDriver)
+---
 
-Google Places API y Place Details API
+## 🛠 Tecnologías utilizadas
 
-OpenCage Geocoder
+- Python 3.10+
+- Streamlit (interfaz)
+- Selenium (scraping dinámico)
+- BeautifulSoup (análisis de HTML)
+- Google Places API
+- OpenCage API
+- Pandas / Requests / difflib / re / OS
 
-Pandas / BeautifulSoup / Requests / difflib
+---
 
-Archivo .env para gestión de claves y rutas
-
-📁 Estructura del proyecto
+## 📁 Estructura del proyecto
 
 ProyectoMaster/
+├── app.py
 ├── .env
 ├── requirements.txt
-├── main.py
 ├── data/
-│   └── nearby_competitors.csv
-├── html_snapshots/
-│   └── *.html
+│ ├── nearby_competitors.csv
+│ └── html/
+│ └── <nombre_hotel>.html
 ├── drivers/
-│   └── chromedriver-win64/
+│ └── chromedriver-win64/
+├── html_snapshots/
+│ └── <nombre_hotel>.html
 ├── src/
-│   ├── geolocation.py
-│   ├── places_search.py
-│   ├── scraper.py
-│   └── scraper_selenium.py
+│ ├── geolocation.py
+│ ├── places_search.py
+│ ├── scraper_selenium.py
+│ ├── extract_additional_info.py
+│ ├── extract_own_features.py
+│ └── price_recommender.py
 
-🔢 Próximos pasos
+## 🚧 Mejoras previstas
 
-Optimizar selección automática de fechas sin depender de HTML inconsistente.
+- 🎯 **Detectar precios por tipo de habitación** para mayor precisión.
+- 🧠 Ajustar la lógica de recomendación de precios según temporada y meteorología.
+- 🌤️ Integrar predicción meteorológica como variable que afecte al precio dinámico.
+- 🔎 Mejorar robustez del scraping en casos donde Booking muestra estructuras dinámicas distintas.
+- 🕸️ Scraping de páginas web oficiales de los alojamientos (cuando existan).
+- 📊 Exportación automática a Power BI o generación de informes PDF.
+- 🔒 Gestión de autenticación y perfiles de clientes.
 
-Añadir comparación entre nombre y dirección para mejorar precisión de resultados.
+## 🚀 Visión a futuro
 
-Mejorar la tolerancia a errores y la velocidad del scraping.
+Este proyecto no es solo un ejercicio académico: es la **primera versión funcional de un producto real** de **Lares Gestión**, diseñado para ayudar a propietarios de alojamientos rurales a tomar decisiones basadas en datos, competir mejor en su zona, y optimizar ingresos.
 
-Añadir visualizaciones finales en Power BI o aplicación web.
+## 📅 Última actualización
 
-📅 Fecha de actualización
+**18 de mayo de 2025**
 
-30 de abril de 2025
-
-Este proyecto está pensado para escalar en el futuro como producto dentro de la empresa, permitiendo a los propietarios de casas rurales analizar sus precios en tiempo real frente a su competencia más cercana y optimizar su estrategia comercial.
+Desarrollado por **Germán Bermúdez Rodríguez**  
+[🔗 GitHub](https://github.com/GermanBermudezRod) · [🔗 LinkedIn](https://www.linkedin.com/in/german-bermudez-rodriguez/)
 

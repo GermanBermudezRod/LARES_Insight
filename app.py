@@ -7,6 +7,10 @@ from src.geolocation import get_coordinates
 from src.places_search import get_cached_or_query_places
 from src.scraper_selenium import get_price_from_booking
 from src.extract_additional_info import extract_extras_from_html
+from src.extract_own_features import extract_own_features_from_booking
+from src.price_recommender import recomendar_precio
+from src.scraper_selenium import guardar_html_de_booking
+
 
 CSV_PATH = "data/nearby_competitors.csv"
 
@@ -148,7 +152,10 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
     contador = 0
 
     for index, row in df.iterrows():
+        if row["name"] not in seleccionados:
+            continue
         contador += 1
+
         progress_html = f"""
         <div style="display: flex; align-items: center; gap: 10px; padding: 12px 0;">
             <div style="width: 22px; height: 22px; border: 3px solid #0076FF; border-top: 3px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
@@ -163,10 +170,7 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
         """
         progress_placeholder.markdown(progress_html, unsafe_allow_html=True)
 
-        if row["name"] not in seleccionados:
-            continue
-
-        st.write(f"🔍 Obteniendo precios de: **{row['name']}**")
+        st.write(f"\U0001F50D Obteniendo precios de: **{row['name']}**")
         try:
             price_min, price_max, price_avg = get_price_from_booking(row["name"])
             df.loc[index, "price_min"] = price_min
@@ -193,6 +197,7 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
         time.sleep(2.5)
 
     df.to_csv(CSV_PATH, index=False)
+    st.session_state.competitors = df.copy()
 
     progress_placeholder.markdown(
         "<span style='color: #0076FF; font-weight: 600;'>✅ Análisis completado con éxito.</span>",
@@ -200,7 +205,8 @@ def lanzar_scraper_para_seleccionados(df, seleccionados):
     )
     time.sleep(2)
     progress_placeholder.empty()
-
+    st.session_state.scraping_completado = True
+    
 # Estado inicial
 if "coords" not in st.session_state:
     st.session_state.coords = None
@@ -210,6 +216,8 @@ if "selected" not in st.session_state:
     st.session_state.selected = []
 if "temp_selected" not in st.session_state:
     st.session_state.temp_selected = []
+    if "scraping_completado" not in st.session_state:
+        st.session_state.scraping_completado = False
 
 # Paso 1: Formulario
 if "buscando_competidores" not in st.session_state:
@@ -228,9 +236,36 @@ if submitted:
     with st.spinner(" Buscando competidores..."):
         coords = get_coordinates(user_input)
         if coords:
+            # Guardar HTML del propio alojamiento
+            guardar_html_de_booking(user_input)
+            
             st.session_state.coords = coords
             #st.success("📍 Coordenadas del alojamiento encontradas")
 
+            # Obtener y mostrar características del alojamiento propio
+            own_data = extract_own_features_from_booking(user_input)
+            st.session_state.own_data = own_data
+
+            # DEBUG TEMPORAL: Mostrar own_data extraído
+            st.write("📊 DEBUG - Datos del alojamiento propio extraídos:", own_data)
+
+            #if own_data:
+                #st.markdown("### 🧾 Características detectadas de tu alojamiento:")
+                #st.markdown(f"📍 <b>Nombre:</b> {user_input}", unsafe_allow_html=True)
+                #if "rating" in own_data:
+                    #st.markdown(f"⭐ <b>Puntuación:</b> {own_data['rating']}", unsafe_allow_html=True)
+                #if "total_reviews" in own_data:
+                    #st.markdown(f"🗣️ <b>Opiniones:</b> {own_data['total_reviews']}", unsafe_allow_html=True)
+                #if "num_rooms" in own_data:
+                    #st.markdown(f"🛏️ <b>Habitaciones:</b> {own_data['num_rooms']}", unsafe_allow_html=True)
+                #if "max_capacity" in own_data:
+                    #st.markdown(f"👥 <b>Capacidad máxima:</b> {own_data['max_capacity']}", unsafe_allow_html=True)
+                #if own_data.get("extras"):
+                    #st.markdown("🎁 <b>Servicios detectados:</b>", unsafe_allow_html=True)
+                    #for s in own_data["extras"]:
+                        #st.markdown(f"✅ {s.capitalize()}")
+
+            # Obtener y mostrar características de competidores
             results = get_cached_or_query_places(coords[0], coords[1], radius_m=search_radius * 1000)
             df_results = pd.DataFrame(results)
             df_results = df_results[
@@ -270,7 +305,7 @@ if submitted:
 # Paso 3: Mostrar resultados
 if st.session_state.buscando_competidores:
     with st.spinner("🔄 Buscando competidores..."):
-        time.sleep(0.5)  # Simula el tiempo de espera antes de cargar
+        time.sleep(0.5)
 
 if not st.session_state.competitors.empty:
     st.write("### 🏘️ Alojamientos encontrados:")
@@ -299,6 +334,7 @@ if not st.session_state.competitors.empty:
             if not row.empty:
                 st.markdown(f"- **{hotel}** – {row.iloc[0]['address']}")
 
+        # Mapa de alojamientos
         if "lat" in st.session_state.competitors.columns and "lon" in st.session_state.competitors.columns:
             query_marker = {
                 "name": "Tu alojamiento",
@@ -347,12 +383,73 @@ if not st.session_state.competitors.empty:
         else:
             st.warning("No se encontraron coordenadas reales para los alojamientos seleccionados.")
 
-        # ✅ BOTÓN PARA SCRAPING CON SELENIUM
+        # BOTÓN DE SCRAPING
         if st.button("🚀 Ejecutar análisis de precios"):
             lanzar_scraper_para_seleccionados(st.session_state.competitors, st.session_state.selected)
+            st.session_state.scraping_completado = True
 
-    else:
-        st.warning("Selecciona al menos un alojamiento y pulsa 'Confirmar selección'.")
+    # ✅ Mostramos extras y recomendación si ya se ha hecho el scraping
+    if st.session_state.get("scraping_completado", False):
+        st.write("### 🧾 Resultados detallados por alojamiento:")
+
+        for _, row in st.session_state.competitors[st.session_state.competitors["name"].isin(st.session_state.selected)].iterrows():
+            badges = []
+
+            if "cancelacion" in row and pd.notnull(row["cancelacion"]):
+                badges.append(f"📌 <b>Cancelación:</b> {row['cancelacion']}")
+            if "mascotas" in row:
+                badges.append(f"🐶 <b>Mascotas:</b> {row['mascotas']}")
+            if row.get("cunas") == "Sí":
+                badges.append("🛏️ <b>Cunas disponibles</b>")
+            if row.get("camas_supletorias") == "Sí":
+                badges.append("🛏️ <b>Camas supletorias</b>")
+            if "costo_extra" in row:
+                badges.append(f"💰 <b>Coste adicional:</b> {row['costo_extra']}")
+            for col in row.index:
+                if col.startswith("servicio_") and row[col] == "Sí":
+                    nombre = col.replace("servicio_", "").capitalize()
+                    badges.append(f"✅ {nombre}")
+
+            badge_html = "".join([
+                f"""<div style="flex: 0 1 auto; background-color: #F0F4FF; color: #1A1A1A; padding: 8px 12px; border-radius: 8px;
+                    border: 1px solid #D0D7DE; font-size: 14px; margin: 4px;">
+                    {item}</div>""" for item in badges
+            ])
+
+            html = f"""
+            <div style="background-color: white; border: 1px solid #D0D7DE; border-radius: 10px; padding: 20px; margin-bottom: 20px; max-width: 1000px;">
+                <h4 style="color: #0076FF;">🏨 {row['name']}</h4>
+                <p><b>💶 Precios:</b> {"Mín: {} € · Media: {} € · Máx: {} €".format(row['price_min'], row['price_avg'], row['price_max']) if pd.notnull(row['price_min']) else "No disponibles"}</p>
+                <p><b>🎁 Extras detectados:</b></p>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">{badge_html}</div>
+            </div>
+            """
+            st.markdown(html, unsafe_allow_html=True)
+
+        # ✅ Recomendación IA
+        if "own_data" in st.session_state and st.session_state.own_data and st.session_state.selected:
+            st.markdown("### 💡 Recomendación de precio para tu alojamiento")
+
+            own = st.session_state.own_data
+            df_comp = st.session_state.competitors
+            competidores_filtrados = df_comp[df_comp["name"].isin(st.session_state.selected)]
+
+            try:
+                # Si no existe la columna 'guest_rating', asumimos mismo valor que el alojamiento propio
+                if "guest_rating" not in competidores_filtrados.columns:
+                    competidores_filtrados["guest_rating"] = own.get("rating", 0)
+
+                precio_min, precio_max, razon = recomendar_precio(own, competidores_filtrados)
+
+                st.markdown(f"""
+                <div style="background-color: #F0FFF0; border: 2px solid #0076FF; padding: 16px; border-radius: 12px;">
+                    <h4 style="color: #0076FF;">💶 Rango recomendado: <span style="color:#1E1E1E">{precio_min:.2f} € - {precio_max:.2f} €</span></h4>
+                    <p style="margin-top:10px;">🧠 <b>Motivo:</b> {razon}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            except Exception as e:
+                st.warning(f"No se pudo generar una recomendación: {e}")
+
 
 st.markdown("---")
 st.caption("Versión estable · Streamlit · 2025")
