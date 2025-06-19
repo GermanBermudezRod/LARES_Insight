@@ -19,7 +19,7 @@ def guardar_html_de_booking(nombre_hotel):
     options.add_argument("--no-sandbox")
     options.add_argument("--window-size=1920,1080")
     # Descomenta la línea siguiente si quieres ocultar el navegador:
-    # options.add_argument("--headless")
+    options.add_argument("--headless")
 
     driver = webdriver.Chrome(options=options)
 
